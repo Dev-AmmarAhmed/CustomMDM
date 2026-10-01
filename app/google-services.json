@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "427596135762",
+    "firebase_url": "https://protection-v40pro-default-rtdb.firebaseio.com",
+    "project_id": "protection-v40pro",
+    "storage_bucket": "protection-v40pro.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:427596135762:android:59744b5aece58932ef4e8b",
+        "android_client_info": {
+          "package_name": "com.custom.mdm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAC8ZyWWlvHOyq7gpcDPeEyYLcz8r0oV6M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

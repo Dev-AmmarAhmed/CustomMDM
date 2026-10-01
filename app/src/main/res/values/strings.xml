@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">System Guard MDM</string>
+    <string name="admin_description">Enterprise Device Owner &amp; Kiosk Controller</string>
+</resources>
