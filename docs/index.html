@@ -1,245 +1,72 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>System Guard MDM — Fleet Command Center</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>System Guard MDM v2.0 - Cloud Console</title>
   <style>
-    body { background-color: #0b1120; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
-    .glass { background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(10px); border: 1px solid rgba(148, 163, 184, 0.15); }
-    .toggle-checkbox:checked { right: 0; border-color: #3b82f6; }
-    .toggle-checkbox:checked + .toggle-label { background-color: #2563eb; }
+    body { background: #0b1120; color: #f8fafc; font-family: system-ui, sans-serif; margin: 0; padding: 20px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    h1 { font-size: 22px; margin-top: 0; color: #38bdf8; }
+    select, input, button { width: 100%; padding: 12px; margin-top: 8px; margin-bottom: 16px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 15px; box-sizing: border-box; }
+    button { background: #2563eb; border: none; font-weight: bold; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .status-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981; font-family: monospace; line-height: 1.6; }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #334155; }
+    .toggle-row input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
   </style>
 </head>
-<body class="min-h-screen pb-16">
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>🛡️ System Guard MDM & Kiosk v2.0 (Live Cloud Dashboard)</h1>
+      <label>Select Managed Phone Slot:</label>
+      <select id="slotSelect">
+        <option value="phone_1">phone_1 (Vivo V40 Pro / Slot 1)</option>
+        <option value="phone_2">phone_2 (OPPO F29 5G / Slot 2)</option>
+        <option value="phone_3">phone_3 (Slot 3)</option>
+        <option value="phone_4">phone_4 (Slot 4)</option>
+      </select>
+      <div id="liveStatus" class="status-box">Connecting to Firebase Realtime Database...</div>
+    </div>
 
-  <!-- AUTH LOGIN SCREEN -->
-  <div id="loginScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 p-4">
-    <div class="glass w-full max-w-md rounded-2xl p-8 shadow-2xl">
-      <div class="flex items-center gap-3 mb-6">
-        <div class="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center text-xl font-bold">🛡️</div>
-        <div>
-          <h1 class="text-xl font-bold text-white">System Guard MDM</h1>
-          <p class="text-xs text-slate-400">Firebase Database Authentication</p>
-        </div>
+    <div class="card">
+      <h1>⚙️ Remote Policy Controls (Instant Sync)</h1>
+      <div class="toggle-row">
+        <span>🚫 Prevent App Installation (Play Store & APK)</span>
+        <input type="checkbox" id="blockInstall" onchange="updatePolicy('blockInstall', this.checked)" />
       </div>
-      <div id="loginError" class="hidden mb-4 rounded-lg bg-red-500/20 border border-red-500/40 p-3 text-xs text-red-300"></div>
-      <div class="space-y-4">
-        <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1">Admin Email</label>
-          <input id="emailInput" type="email" placeholder="admin@mdm.com" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 text-sm text-white focus:border-blue-500 focus:outline-none" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1">Admin Password</label>
-          <input id="passInput" type="password" placeholder="••••••••" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 text-sm text-white focus:border-blue-500 focus:outline-none" />
-        </div>
-        <button id="loginBtn" class="w-full rounded-xl bg-blue-600 hover:bg-blue-500 py-3 text-sm font-semibold text-white transition">
-          Sign In to Command Center
-        </button>
+      <div class="toggle-row">
+        <span>🔒 Prevent App Uninstallation (Lock All Apps)</span>
+        <input type="checkbox" id="blockUninstall" onchange="updatePolicy('blockUninstall', this.checked)" />
       </div>
+      <div class="toggle-row">
+        <span>📷 Block Camera Sensors (Disable All Cameras)</span>
+        <input type="checkbox" id="disableCamera" onchange="updatePolicy('disableCamera', this.checked)" />
+      </div>
+      <div class="toggle-row">
+        <span>🛡️ Block Screenshots, Screen Record & USB Data</span>
+        <input type="checkbox" id="blockScreenshots" onchange="updatePolicy('blockScreenshots', this.checked)" />
+      </div>
+      <div class="toggle-row">
+        <span>🛑 Block Factory Reset & Safe Boot</span>
+        <input type="checkbox" id="blockFactoryReset" onchange="updatePolicy('blockFactoryReset', this.checked)" />
+      </div>
+      <div class="toggle-row">
+        <span>📌 Enable Strict Kiosk Mode</span>
+        <input type="checkbox" id="kioskMode" onchange="updatePolicy('kioskMode', this.checked)" />
+      </div>
+
+      <label style="display:block; margin-top:16px;">Allowed Kiosk Packages (comma separated):</label>
+      <input type="text" id="kioskApps" placeholder="com.whatsapp,com.android.dialer" />
+      <button onclick="saveKioskApps()">💾 Save Allowed Kiosk Apps</button>
     </div>
   </div>
 
-  <!-- MAIN DASHBOARD -->
-  <div id="dashboardContent" class="hidden max-w-7xl mx-auto px-4 pt-6">
-    <!-- Top Bar -->
-    <div class="glass rounded-2xl p-4 mb-6 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center text-xl">🛡️</div>
-        <div>
-          <h1 class="text-lg font-bold">System Guard MDM Fleet</h1>
-          <p id="adminUserText" class="text-xs text-slate-400">Connected to protection-v40pro</p>
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <button id="lockAllBtn" class="rounded-xl bg-amber-600 hover:bg-amber-500 px-4 py-2 text-xs font-semibold text-white">
-          🔒 Lock Install on All 4 Phones
-        </button>
-        <button id="refreshTelemetryBtn" class="rounded-xl bg-slate-700 hover:bg-slate-600 px-4 py-2 text-xs font-semibold text-white">
-          🔄 Sync Telemetry Now
-        </button>
-        <button id="logoutBtn" class="rounded-xl bg-red-600/20 border border-red-500/30 hover:bg-red-600/30 px-4 py-2 text-xs font-semibold text-red-300">
-          Logout
-        </button>
-      </div>
-    </div>
-
-    <!-- 4-Phone Selector Tabs -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-      <button onclick="selectPhone('phone_1')" id="tab_phone_1" class="phone-tab glass rounded-xl p-4 text-left border-2 border-blue-500">
-        <div class="text-xs text-slate-400">SLOT 1</div>
-        <div class="font-bold text-sm mt-1" id="tab_name_phone_1">Vivo V40 Pro</div>
-        <div class="text-xs text-emerald-400 mt-1" id="tab_bat_phone_1">--%</div>
-      </button>
-      <button onclick="selectPhone('phone_2')" id="tab_phone_2" class="phone-tab glass rounded-xl p-4 text-left border-2 border-transparent">
-        <div class="text-xs text-slate-400">SLOT 2</div>
-        <div class="font-bold text-sm mt-1" id="tab_name_phone_2">Personal Phone 2</div>
-        <div class="text-xs text-emerald-400 mt-1" id="tab_bat_phone_2">--%</div>
-      </button>
-      <button onclick="selectPhone('phone_3')" id="tab_phone_3" class="phone-tab glass rounded-xl p-4 text-left border-2 border-transparent">
-        <div class="text-xs text-slate-400">SLOT 3</div>
-        <div class="font-bold text-sm mt-1" id="tab_name_phone_3">Personal Phone 3</div>
-        <div class="text-xs text-emerald-400 mt-1" id="tab_bat_phone_3">--%</div>
-      </button>
-      <button onclick="selectPhone('phone_4')" id="tab_phone_4" class="phone-tab glass rounded-xl p-4 text-left border-2 border-transparent">
-        <div class="text-xs text-slate-400">SLOT 4</div>
-        <div class="font-bold text-sm mt-1" id="tab_name_phone_4">Personal Phone 4</div>
-        <div class="text-xs text-emerald-400 mt-1" id="tab_bat_phone_4">--%</div>
-      </button>
-    </div>
-
-    <!-- Live Device Telemetry Strip -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-      <div class="glass rounded-xl p-4">
-        <div class="text-xs text-slate-400">Device Model</div>
-        <div id="statModel" class="text-sm font-bold mt-1">Waiting...</div>
-      </div>
-      <div class="glass rounded-xl p-4">
-        <div class="text-xs text-slate-400">Battery Status</div>
-        <div id="statBattery" class="text-sm font-bold text-emerald-400 mt-1">--%</div>
-      </div>
-      <div class="glass rounded-xl p-4">
-        <div class="text-xs text-slate-400">Device Owner Mode</div>
-        <div id="statOwner" class="text-sm font-bold mt-1">Checking...</div>
-      </div>
-      <div class="glass rounded-xl p-4">
-        <div class="text-xs text-slate-400">Last Synced</div>
-        <div id="statLastSeen" class="text-sm font-bold text-sky-400 mt-1">--</div>
-      </div>
-      <div class="glass rounded-xl p-4 col-span-2 md:col-span-1">
-        <div class="text-xs text-slate-400">Live Agent Status</div>
-        <div id="statAgent" class="text-xs font-medium text-slate-200 mt-1 truncate">--</div>
-      </div>
-    </div>
-
-    <!-- Main Grid: Left (MDM Controls) & Right (Usage + Installed Apps) -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-      <!-- Left Column: MDM Controls & Kiosk Config -->
-      <div class="lg:col-span-5 space-y-6">
-        <div class="glass rounded-2xl p-6">
-          <h2 class="text-base font-bold mb-4 flex items-center justify-between">
-            <span>⚙️ MDM Policy Controls</span>
-            <span id="activeSlotBadge" class="text-xs bg-blue-600/30 text-blue-300 px-2.5 py-1 rounded-lg">phone_1</span>
-          </h2>
-
-          <div class="space-y-4">
-            <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 cursor-pointer">
-              <div>
-                <div class="text-sm font-semibold">Block App Installations</div>
-                <div class="text-xs text-slate-400">Blocks Play Store & APK Sideloading</div>
-              </div>
-              <input type="checkbox" id="chk_blockInstall" onchange="togglePolicy('blockInstall', this.checked)" class="h-5 w-5 accent-blue-600" />
-            </label>
-
-            <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 cursor-pointer">
-              <div>
-                <div class="text-sm font-semibold">Block App Uninstall</div>
-                <div class="text-xs text-slate-400">Prevents deleting any app or MDM agent</div>
-              </div>
-              <input type="checkbox" id="chk_blockUninstall" onchange="togglePolicy('blockUninstall', this.checked)" class="h-5 w-5 accent-blue-600" />
-            </label>
-
-            <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 cursor-pointer">
-              <div>
-                <div class="text-sm font-semibold text-amber-400">Enable True Kiosk Mode</div>
-                <div class="text-xs text-slate-400">Pins phone to allowed apps whitelist only</div>
-              </div>
-              <input type="checkbox" id="chk_kioskMode" onchange="togglePolicy('kioskMode', this.checked)" class="h-5 w-5 accent-amber-500" />
-            </label>
-
-            <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 cursor-pointer">
-              <div>
-                <div class="text-sm font-semibold">Disable All Cameras</div>
-                <div class="text-xs text-slate-400">System-wide hardware camera lock</div>
-              </div>
-              <input type="checkbox" id="chk_disableCamera" onchange="togglePolicy('disableCamera', this.checked)" class="h-5 w-5 accent-blue-600" />
-            </label>
-
-            <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 cursor-pointer">
-              <div>
-                <div class="text-sm font-semibold">Block Screenshots & Screen Record</div>
-                <div class="text-xs text-slate-400">Prevents screen capture across OS</div>
-              </div>
-              <input type="checkbox" id="chk_blockScreenshots" onchange="togglePolicy('blockScreenshots', this.checked)" class="h-5 w-5 accent-blue-600" />
-            </label>
-
-            <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 cursor-pointer">
-              <div>
-                <div class="text-sm font-semibold">Block USB Data Transfer</div>
-                <div class="text-xs text-slate-400">Blocks MTP/PTP file transfer via cable</div>
-              </div>
-              <input type="checkbox" id="chk_blockUsb" onchange="togglePolicy('blockUsb', this.checked)" class="h-5 w-5 accent-blue-600" />
-            </label>
-
-            <label class="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 cursor-pointer">
-              <div>
-                <div class="text-sm font-semibold">Block Factory Reset & Safe Boot</div>
-                <div class="text-xs text-slate-400">Prevents Settings Reset & Safe Mode bypass</div>
-              </div>
-              <input type="checkbox" id="chk_blockFactoryReset" onchange="togglePolicy('blockFactoryReset', this.checked)" class="h-5 w-5 accent-blue-600" />
-            </label>
-          </div>
-
-          <!-- Instant Actions -->
-          <div class="grid grid-cols-2 gap-3 mt-6">
-            <button onclick="triggerAction('lockScreenNow')" class="rounded-xl bg-indigo-600 hover:bg-indigo-500 py-2.5 text-xs font-bold text-white">
-              📴 Lock Screen Now
-            </button>
-            <button onclick="confirmRemoveOwner()" class="rounded-xl bg-red-600/20 border border-red-500/40 hover:bg-red-600/40 py-2.5 text-xs font-bold text-red-300">
-              🔓 Revoke Device Owner
-            </button>
-          </div>
-        </div>
-
-        <!-- Kiosk Allowed Packages & Suspended Apps Editor -->
-        <div class="glass rounded-2xl p-6 space-y-4">
-          <h3 class="text-sm font-bold">📱 Kiosk Whitelist Packages (Comma Separated)</h3>
-          <textarea id="txt_kioskApps" rows="2" class="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-xs text-white"></textarea>
-          <button onclick="saveTextPolicy('kioskApps', 'txt_kioskApps')" class="w-full rounded-xl bg-blue-600 hover:bg-blue-500 py-2 text-xs font-bold text-white">
-            Save Kiosk Whitelist
-          </button>
-
-          <h3 class="text-sm font-bold pt-2">🚫 Suspended / Blocked Packages</h3>
-          <textarea id="txt_suspendedApps" rows="2" placeholder="com.instagram.android,com.zhiliaoapp.musically" class="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-xs text-white"></textarea>
-          <button onclick="saveTextPolicy('suspendedApps', 'txt_suspendedApps')" class="w-full rounded-xl bg-rose-600 hover:bg-rose-500 py-2 text-xs font-bold text-white">
-            Update Suspended Apps
-          </button>
-        </div>
-      </div>
-
-      <!-- Right Column: App Usage & Installed Apps Manager -->
-      <div class="lg:col-span-7 space-y-6">
-
-        <!-- App Usage Stats (24h) -->
-        <div class="glass rounded-2xl p-6">
-          <h2 class="text-base font-bold mb-4">📊 App Usage Time (Last 24 Hours)</h2>
-          <div id="usageContainer" class="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-            <div class="text-xs text-slate-400">No usage stats reported yet. Grant Usage Access on the phone.</div>
-          </div>
-        </div>
-
-        <!-- Installed Apps List with 1-Click Block & Kiosk Add -->
-        <div class="glass rounded-2xl p-6">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <h2 class="text-base font-bold">📦 Installed Applications (<span id="appCount">0</span>)</h2>
-            <input id="appSearch" type="text" oninput="renderInstalledApps()" placeholder="Search app or package..." class="rounded-xl bg-slate-900 border border-slate-700 px-3 py-1.5 text-xs text-white focus:outline-none" />
-          </div>
-          <div id="installedAppsContainer" class="space-y-2 max-h-96 overflow-y-auto pr-1">
-            <div class="text-xs text-slate-400">Waiting for device to sync installed apps...</div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <!-- Firebase Modular SDK -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
-    import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-database.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getDatabase, ref, onValue, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCRefNvdFptkSIRIa-m0KPuOWjA-BtzAyU",
@@ -248,220 +75,53 @@
       projectId: "protection-v40pro",
       storageBucket: "protection-v40pro.firebasestorage.app",
       messagingSenderId: "427596135762",
-      appId: "1:427596135762:web:85948d846ec6a372ef4e8b"
+      appId: "1:427596135762:web:749367648269b34cef4e8b",
+      measurementId: "G-XYNLQW7BER"
     };
 
     const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
     const db = getDatabase(app);
+    const slotSelect = document.getElementById("slotSelect");
+    let currentUnsubscribe = null;
 
-    let currentPhone = "phone_1";
-    let allDevicesData = {};
+    function listenToSlot(slot) {
+      const slotRef = ref(db, "devices/" + slot);
+      onValue(slotRef, (snapshot) => {
+        const d = snapshot.val() || {};
+        const t = d.telemetry || {};
+        document.getElementById("liveStatus").innerHTML =
+          `<b>Status:</b> ${d.status || "Waiting for App..."}<br>` +
+          `<b>Device Model:</b> ${t.model || "N/A"} (Android ${t.androidVersion || "?"})<br>` +
+          `<b>Device Owner:</b> ${t.isDeviceOwner ? "YES ✅" : "NO ❌"}<br>` +
+          `<b>Battery:</b> ${t.level !== undefined ? t.level + "%" : "N/A"} ${t.charging ? "⚡ Charging" : ""}<br>` +
+          `<b>Last Synced:</b> ${t.lastSeen || "Never"}`;
 
-    // Authentication Listener
-    onAuthStateChanged(auth, (user) => {
-      const loginScreen = document.getElementById("loginScreen");
-      const dashboardContent = document.getElementById("dashboardContent");
-      if (user) {
-        loginScreen.classList.add("hidden");
-        dashboardContent.classList.remove("hidden");
-        document.getElementById("adminUserText").textContent = `Logged in as ${user.email}`;
-        startRealtimeSync();
-      } else {
-        loginScreen.classList.remove("hidden");
-        dashboardContent.classList.add("hidden");
-      }
-    });
-
-    document.getElementById("loginBtn").addEventListener("click", async () => {
-      const email = document.getElementById("emailInput").value.trim();
-      const pass = document.getElementById("passInput").value.trim();
-      const errBox = document.getElementById("loginError");
-      errBox.classList.add("hidden");
-      try {
-        await signInWithEmailAndPassword(auth, email, pass);
-      } catch (e) {
-        errBox.textContent = e.message;
-        errBox.classList.remove("hidden");
-      }
-    });
-
-    document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
-
-    function startRealtimeSync() {
-      const devicesRef = ref(db, "devices");
-      onValue(devicesRef, (snapshot) => {
-        allDevicesData = snapshot.val() || {};
-        updateTabsOverview();
-        renderCurrentPhone();
+        document.getElementById("blockInstall").checked = !!d.blockInstall;
+        document.getElementById("blockUninstall").checked = !!d.blockUninstall;
+        document.getElementById("disableCamera").checked = !!d.disableCamera;
+        document.getElementById("blockScreenshots").checked = !!d.blockScreenshots;
+        document.getElementById("blockFactoryReset").checked = d.blockFactoryReset !== false;
+        document.getElementById("kioskMode").checked = !!d.kioskMode;
+        document.getElementById("kioskApps").value = d.kioskApps || "com.whatsapp,com.android.dialer";
+      }, (err) => {
+        document.getElementById("liveStatus").innerHTML = `❌ Firebase Error: ${err.message} (Check Database Rules!)`;
       });
     }
 
-    function updateTabsOverview() {
-      ["phone_1", "phone_2", "phone_3", "phone_4"].forEach((slot) => {
-        const d = allDevicesData[slot] || {};
-        const tel = d.telemetry || {};
-        const nameEl = document.getElementById(`tab_name_${slot}`);
-        const batEl = document.getElementById(`tab_bat_${slot}`);
-        if (nameEl && tel.model) nameEl.textContent = tel.model;
-        if (batEl) {
-          batEl.textContent = tel.level !== undefined
-            ? `🔋 ${tel.level}% ${tel.charging ? "⚡" : ""}`
-            : "Offline / Waiting";
-        }
-      });
-    }
-
-    window.selectPhone = (slot) => {
-      currentPhone = slot;
-      document.getElementById("activeSlotBadge").textContent = slot;
-      ["phone_1", "phone_2", "phone_3", "phone_4"].forEach((s) => {
-        const tab = document.getElementById(`tab_${s}`);
-        if (s === slot) {
-          tab.classList.add("border-blue-500");
-          tab.classList.remove("border-transparent");
-        } else {
-          tab.classList.remove("border-blue-500");
-          tab.classList.add("border-transparent");
-        }
-      });
-      renderCurrentPhone();
+    window.updatePolicy = (key, val) => {
+      const slot = slotSelect.value;
+      update(ref(db, "devices/" + slot), { [key]: val });
     };
 
-    function renderCurrentPhone() {
-      const d = allDevicesData[currentPhone] || {};
-      const tel = d.telemetry || {};
-
-      document.getElementById("statModel").textContent = tel.model ? `${tel.model} (Android ${tel.androidVersion || "?"})` : "Not Synced Yet";
-      document.getElementById("statBattery").textContent = tel.level !== undefined ? `${tel.level}% ${tel.charging ? "⚡ Charging" : ""}` : "--%";
-      document.getElementById("statOwner").textContent = tel.isDeviceOwner ? "ACTIVE ✅" : "INACTIVE ❌";
-      document.getElementById("statOwner").className = `text-sm font-bold mt-1 ${tel.isDeviceOwner ? "text-emerald-400" : "text-rose-400"}`;
-      document.getElementById("statLastSeen").textContent = tel.lastSeen || "--";
-      document.getElementById("statAgent").textContent = d.status || "Waiting...";
-
-      const boolPolicies = [
-        "blockInstall", "blockUninstall", "kioskMode",
-        "disableCamera", "blockScreenshots", "blockUsb", "blockFactoryReset"
-      ];
-      boolPolicies.forEach((p) => {
-        const el = document.getElementById(`chk_${p}`);
-        if (el) el.checked = !!d[p];
-      });
-
-      document.getElementById("txt_kioskApps").value = d.kioskApps || "";
-      document.getElementById("txt_suspendedApps").value = d.suspendedApps || "";
-
-      renderUsageStats(d.appUsage || []);
-      window.renderInstalledApps();
-    }
-
-    function renderUsageStats(usageList) {
-      const box = document.getElementById("usageContainer");
-      if (!usageList.length) {
-        box.innerHTML = `<div class="text-xs text-slate-400">No usage stats reported yet. Click 'Grant App Usage Access' inside the app.</div>`;
-        return;
-      }
-      const maxMins = Math.max(...usageList.map(u => u.minutes || 1), 1);
-      box.innerHTML = usageList.map(u => {
-        const pct = Math.min(100, Math.round(((u.minutes || 0) / maxMins) * 100));
-        return `
-          <div class="bg-slate-900/70 rounded-xl p-2.5">
-            <div class="flex justify-between text-xs mb-1">
-              <span class="font-semibold text-white">${u.name} <span class="text-slate-500">(${u.pkg})</span></span>
-              <span class="text-sky-400 font-bold">${u.minutes} min</span>
-            </div>
-            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div class="bg-blue-500 h-2 rounded-full" style="width:${pct}%"></div>
-            </div>
-          </div>
-        `;
-      }).join("");
-    }
-
-    window.renderInstalledApps = () => {
-      const d = allDevicesData[currentPhone] || {};
-      const apps = d.installedApps || [];
-      const search = (document.getElementById("appSearch").value || "").toLowerCase();
-      const suspendedSet = new Set((d.suspendedApps || "").split(",").map(s => s.trim()).filter(Boolean));
-      const kioskSet = new Set((d.kioskApps || "").split(",").map(s => s.trim()).filter(Boolean));
-
-      document.getElementById("appCount").textContent = apps.length;
-      const filtered = apps.filter(a =>
-        (a.name || "").toLowerCase().includes(search) ||
-        (a.pkg || "").toLowerCase().includes(search)
-      );
-
-      const box = document.getElementById("installedAppsContainer");
-      if (!filtered.length) {
-        box.innerHTML = `<div class="text-xs text-slate-400">No matching applications found.</div>`;
-        return;
-      }
-
-      box.innerHTML = filtered.map(a => {
-        const isSusp = suspendedSet.has(a.pkg);
-        const isKiosk = kioskSet.has(a.pkg);
-        return `
-          <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/70 rounded-xl p-3">
-            <div>
-              <div class="text-xs font-bold text-white">${a.name} <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">${a.type || "App"}</span></div>
-              <div class="text-[11px] text-slate-400">${a.pkg}</div>
-            </div>
-            <div class="flex items-center gap-2">
-              <button onclick="toggleAppKiosk('${a.pkg}')" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold ${isKiosk ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'}">
-                ${isKiosk ? '★ In Kiosk' : '+ Kiosk'}
-              </button>
-              <button onclick="toggleAppSuspend('${a.pkg}')" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold ${isSusp ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300'}">
-                ${isSusp ? '🚫 Blocked' : 'Block App'}
-              </button>
-            </div>
-          </div>
-        `;
-      }).join("");
+    window.saveKioskApps = () => {
+      const slot = slotSelect.value;
+      const val = document.getElementById("kioskApps").value;
+      update(ref(db, "devices/" + slot), { kioskApps: val });
+      alert("Kiosk apps updated!");
     };
 
-    window.togglePolicy = (key, val) => {
-      update(ref(db, `devices/${currentPhone}`), { [key]: val });
-    };
-
-    window.saveTextPolicy = (key, inputId) => {
-      const val = document.getElementById(inputId).value.trim();
-      update(ref(db, `devices/${currentPhone}`), { [key]: val });
-    };
-
-    window.triggerAction = (key) => {
-      update(ref(db, `devices/${currentPhone}`), { [key]: true });
-    };
-
-    window.toggleAppSuspend = (pkg) => {
-      const d = allDevicesData[currentPhone] || {};
-      const set = new Set((d.suspendedApps || "").split(",").map(s => s.trim()).filter(Boolean));
-      if (set.has(pkg)) set.delete(pkg); else set.add(pkg);
-      update(ref(db, `devices/${currentPhone}`), { suspendedApps: Array.from(set).join(",") });
-    };
-
-    window.toggleAppKiosk = (pkg) => {
-      const d = allDevicesData[currentPhone] || {};
-      const set = new Set((d.kioskApps || "").split(",").map(s => s.trim()).filter(Boolean));
-      if (set.has(pkg)) set.delete(pkg); else set.add(pkg);
-      update(ref(db, `devices/${currentPhone}`), { kioskApps: Array.from(set).join(",") });
-    };
-
-    window.confirmRemoveOwner = () => {
-      if (confirm(`Are you sure you want to remove Device Owner protection on ${currentPhone}?`)) {
-        update(ref(db, `devices/${currentPhone}`), { removeAdmin: true });
-      }
-    };
-
-    document.getElementById("refreshTelemetryBtn").addEventListener("click", () => {
-      update(ref(db, `devices/${currentPhone}`), { refreshNow: true });
-    });
-
-    document.getElementById("lockAllBtn").addEventListener("click", () => {
-      ["phone_1", "phone_2", "phone_3", "phone_4"].forEach(slot => {
-        update(ref(db, `devices/${slot}`), { blockInstall: true, blockUninstall: true });
-      });
-      alert("Install & Uninstall Lock sent to all 4 phones!");
-    });
+    slotSelect.addEventListener("change", () => listenToSlot(slotSelect.value));
+    listenToSlot(slotSelect.value);
   </script>
 </body>
 </html>
