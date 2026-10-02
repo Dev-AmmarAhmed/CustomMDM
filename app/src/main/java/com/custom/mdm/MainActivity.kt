@@ -75,6 +75,8 @@ class MainActivity : Activity() {
     private var isBlockSensorsUsb = false
     private var isBlockReset = true
     private var isKioskMode = false
+    private var lastAppliedKioskState = false
+    private var lastToggleTime = 0L
     private var kioskAppsCsv = "com.whatsapp,com.android.dialer"
 
     private val periodicSyncRunnable = object : Runnable {
@@ -353,6 +355,7 @@ class MainActivity : Activity() {
     }
 
     private fun onControlToggled() {
+        lastToggleTime = System.currentTimeMillis()
         saveLocalState()
         applyDeviceOwnerPolicies(false)
         updateStatusUI()
@@ -396,7 +399,7 @@ class MainActivity : Activity() {
                     node.put("blockFactoryReset", isBlockReset)
                     node.put("kioskMode", isKioskMode)
                     if (!node.has("kioskApps")) node.put("kioskApps", kioskAppsCsv)
-                } else {
+                } else if (System.currentTimeMillis() - lastToggleTime > 10000) {
                     if (node.has("blockInstall")) isBlockInstall = node.optBoolean("blockInstall", isBlockInstall)
                     if (node.has("blockUninstall")) isBlockUninstall = node.optBoolean("blockUninstall", isBlockUninstall)
                     if (node.has("blockStatusBar")) isBlockStatusBar = node.optBoolean("blockStatusBar", isBlockStatusBar)
@@ -562,10 +565,13 @@ class MainActivity : Activity() {
                 }
             }
 
-            if (isKioskMode) {
-                startLockTask()
-            } else {
-                stopLockTask()
+            if (isKioskMode != lastAppliedKioskState) {
+                lastAppliedKioskState = isKioskMode
+                if (isKioskMode) {
+                    startLockTask()
+                } else {
+                    try { stopLockTask() } catch (_: Exception) {}
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
