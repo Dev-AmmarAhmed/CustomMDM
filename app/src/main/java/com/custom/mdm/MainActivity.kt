@@ -5,17 +5,12 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.net.Uri
-import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.os.UserManager
-import android.provider.Settings
 import android.text.InputType
 import android.view.View
 import android.widget.*
@@ -32,6 +27,7 @@ class MainActivity : Activity() {
 
     private val dbBaseUrl = "https://protection-v40pro-default-rtdb.firebaseio.com/devices/"
     private val secretPin = "7302@123"
+    private val kioskUnlockPin = "1234" // EMERGENCY KIOSK PIN
 
     private lateinit var dpm: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
@@ -43,7 +39,6 @@ class MainActivity : Activity() {
     private lateinit var adminContainer: LinearLayout
     private lateinit var pinInput: EditText
     private lateinit var unlockBtn: Button
-    private lateinit var kioskAppsLayout: LinearLayout
 
     private lateinit var chkBlockInstall: CheckBox
     private lateinit var chkBlockUninstall: CheckBox
@@ -69,7 +64,6 @@ class MainActivity : Activity() {
     private var isKioskMode = false
     private var kioskAppsCsv = "com.whatsapp,com.android.dialer"
 
-    // FIX: Variables to track changes and prevent hang loops
     private var lastAppliedKioskState = false
     private var lastToggleTime = 0L
     private var lastFetchedStateHash = 0
@@ -77,14 +71,12 @@ class MainActivity : Activity() {
     private val periodicSyncRunnable = object : Runnable {
         override fun run() {
             syncWithFirebase(false)
-            // Polling har 10 sec me hogi, par UI update tabhi hoga jab Cloud me change ho
             mainHandler.postDelayed(this, 10000)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponent = ComponentName(this, MdmAdminReceiver::class.java)
         prefs = getSharedPreferences("MDM_V2_PREFS", Context.MODE_PRIVATE)
@@ -95,21 +87,6 @@ class MainActivity : Activity() {
 
         syncWithFirebase(true)
         mainHandler.postDelayed(periodicSyncRunnable, 10000)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        isAdminUnlocked = false
-        if (::adminContainer.isInitialized) {
-            adminContainer.visibility = View.GONE
-            unlockBtn.text = "🔓 UNLOCK ADMIN CONTROLS"
-            pinInput.setText("")
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        mainHandler.removeCallbacks(periodicSyncRunnable)
     }
 
     private fun loadLocalState() {
@@ -136,7 +113,6 @@ class MainActivity : Activity() {
             .putBoolean("blockScreenshots", isBlockSensorsUsb)
             .putBoolean("blockFactoryReset", isBlockReset)
             .putBoolean("kioskMode", isKioskMode)
-            .putString("kioskApps", kioskAppsCsv)
             .apply()
     }
 
@@ -144,7 +120,7 @@ class MainActivity : Activity() {
         val scrollView = ScrollView(this).apply { setBackgroundColor(0xFF0B1120.toInt()) }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(45, 55, 45, 65) }
 
-        val title = TextView(this).apply { text = "🛡️ System Guard MDM v2.3"; setTextColor(0xFFFFFFFF.toInt()); textSize = 20f }
+        val title = TextView(this).apply { text = "🛡️ System Guard MDM v2.5"; setTextColor(0xFFFFFFFF.toInt()); textSize = 20f }
         root.addView(title)
 
         statusText = TextView(this).apply { setTextColor(0xFF38BDF8.toInt()); textSize = 14f; setPadding(24, 20, 24, 20); setBackgroundColor(0xFF1E293B.toInt()) }
@@ -152,32 +128,59 @@ class MainActivity : Activity() {
         statusText.layoutParams = statusParams
         root.addView(statusText)
 
-        val pinLabel = TextView(this).apply { text = "🔐 Enter Admin Key to Unlock Controls:"; setTextColor(0xFFFACC15.toInt()); textSize = 15f }
+        // ================= EMERGENCY KIOSK UNLOCK UI =================
+        val emergencyContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(30, 30, 30, 30); setBackgroundColor(0xFF450A0A.toInt()) }
+        val emergencyLabel = TextView(this).apply { text = "🚨 KIOSK LOCKED? EMERGENCY UNLOCK"; setTextColor(0xFFFCA5A5.toInt()); textSize = 14f; setPadding(0, 0, 0, 10) }
+        emergencyContainer.addView(emergencyLabel)
+
+        val kioskPinInput = EditText(this).apply { hint = "Enter PIN (1234)..."; setHintTextColor(0xFF9CA3AF.toInt()); setTextColor(0xFFFFFFFF.toInt()); setBackgroundColor(0xFF1E293B.toInt()); setPadding(20, 20, 20, 20); inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD }
+        emergencyContainer.addView(kioskPinInput)
+
+        val btnUnlockKiosk = Button(this).apply {
+            text = "🔓 FORCE UNLOCK KIOSK"
+            setBackgroundColor(0xFFDC2626.toInt()); setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 16, 0, 0) }
+            setOnClickListener {
+                if (kioskPinInput.text.toString() == kioskUnlockPin) {
+                    isKioskMode = false
+                    if (::chkKioskMode.isInitialized) chkKioskMode.isChecked = false
+                    lastAppliedKioskState = false
+                    try { stopLockTask() } catch(e: Exception) {}
+                    saveLocalState()
+                    syncWithFirebase(true)
+                    kioskPinInput.setText("")
+                    Toast.makeText(this@MainActivity, "✅ KIOSK STOPPED! Phone is normal now.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "❌ Wrong PIN!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        emergencyContainer.addView(btnUnlockKiosk)
+        root.addView(emergencyContainer)
+        // =============================================================
+
+        val pinLabel = TextView(this).apply { text = "🔐 Enter Admin Key to Unlock Controls:"; setTextColor(0xFFFACC15.toInt()); textSize = 15f; setPadding(0, 40, 0, 0) }
         root.addView(pinLabel)
 
         pinInput = EditText(this).apply { hint = "Enter Hidden Admin Key..."; setHintTextColor(0xFF64748B.toInt()); setTextColor(0xFFFFFFFF.toInt()); setBackgroundColor(0xFF1E293B.toInt()); setPadding(24, 20, 24, 20); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
         root.addView(pinInput)
 
-        val btnParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 16, 0, 20) }
-
         unlockBtn = Button(this).apply {
             text = "🔓 UNLOCK ADMIN CONTROLS"
-            setBackgroundColor(0xFF7C3AED.toInt()); setTextColor(0xFFFFFFFF.toInt()); layoutParams = btnParams
+            setBackgroundColor(0xFF7C3AED.toInt()); setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 16, 0, 20) }
             setOnClickListener {
                 if (isAdminUnlocked) {
                     isAdminUnlocked = false
                     adminContainer.visibility = View.GONE
                     text = "🔓 UNLOCK ADMIN CONTROLS"
-                    pinInput.setText("")
                 } else {
                     if (pinInput.text.toString().trim() == secretPin) {
                         isAdminUnlocked = true
                         adminContainer.visibility = View.VISIBLE
                         text = "🔒 LOCK ADMIN CONTROLS"
                         pinInput.setText("")
-                    } else {
-                        Toast.makeText(this@MainActivity, "❌ Wrong Admin Key!", Toast.LENGTH_SHORT).show()
-                    }
+                    } else Toast.makeText(this@MainActivity, "❌ Wrong Admin Key!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -188,20 +191,16 @@ class MainActivity : Activity() {
         val slots = arrayOf("phone_1", "phone_2", "phone_3", "phone_4")
         slotSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, slots)
-            val idx = slots.indexOf(currentSlot)
-            if (idx >= 0) setSelection(idx)
+            val idx = slots.indexOf(currentSlot); if (idx >= 0) setSelection(idx)
         }
         adminContainer.addView(slotSpinner)
 
         val bindBtn = Button(this).apply {
             text = "🔄 BIND & FORCE SYNC TO FIREBASE"
-            setBackgroundColor(0xFF2563EB.toInt()); setTextColor(0xFFFFFFFF.toInt()); layoutParams = btnParams
+            setBackgroundColor(0xFF2563EB.toInt()); setTextColor(0xFFFFFFFF.toInt())
             setOnClickListener {
                 currentSlot = slotSpinner.selectedItem.toString()
-                saveLocalState()
-                firebaseSyncState = "Syncing..."
-                updateStatusUI()
-                syncWithFirebase(true)
+                saveLocalState(); syncWithFirebase(true)
                 Toast.makeText(this@MainActivity, "Force Sync Triggered!", Toast.LENGTH_SHORT).show()
             }
         }
@@ -209,7 +208,7 @@ class MainActivity : Activity() {
 
         chkBlockInstall = createSwitch(adminContainer, "🚫 Prevent App Installation", isBlockInstall) { isBlockInstall = it; onControlToggled() }
         chkBlockUninstall = createSwitch(adminContainer, "🔒 Prevent App Uninstallation", isBlockUninstall) { isBlockUninstall = it; onControlToggled() }
-        chkBlockStatusBar = createSwitch(adminContainer, "📵 Block Notification Panel (Swipe Down)", isBlockStatusBar) { isBlockStatusBar = it; onControlToggled() }
+        chkBlockStatusBar = createSwitch(adminContainer, "📵 Block Notification Panel", isBlockStatusBar) { isBlockStatusBar = it; onControlToggled() }
         chkBlockDevMode = createSwitch(adminContainer, "🛠️ Block Developer Mode & ADB", isBlockDevMode) { isBlockDevMode = it; onControlToggled() }
         chkBlockCamera = createSwitch(adminContainer, "📷 Block Camera Sensors", isBlockCamera) { isBlockCamera = it; onControlToggled() }
         chkBlockSensorsUsb = createSwitch(adminContainer, "🛡️ Block Screenshots & USB Data", isBlockSensorsUsb) { isBlockSensorsUsb = it; onControlToggled() }
@@ -217,8 +216,6 @@ class MainActivity : Activity() {
         chkKioskMode = createSwitch(adminContainer, "📌 Strict Kiosk Mode", isKioskMode) { isKioskMode = it; onControlToggled() }
 
         root.addView(adminContainer)
-        kioskAppsLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(kioskAppsLayout)
         scrollView.addView(root)
         setContentView(scrollView)
         updateStatusUI()
@@ -246,40 +243,19 @@ class MainActivity : Activity() {
         Thread {
             try {
                 val url = URL("$dbBaseUrl$slot.json")
-                val getConn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 7000
-                    readTimeout = 7000
-                }
-                
-                if (getConn.responseCode !in 200..299) {
-                    firebaseSyncState = "HTTP ERROR ${getConn.responseCode} ❌"
-                    runOnUiThread { updateStatusUI() }
-                    return@Thread
-                }
-
+                val getConn = (url.openConnection() as HttpURLConnection).apply { requestMethod = "GET" }
                 val rawJson = getConn.inputStream.bufferedReader().use(BufferedReader::readText).trim()
                 getConn.disconnect()
-
                 val node = if (rawJson.isEmpty() || rawJson == "null") JSONObject() else JSONObject(rawJson)
                 
                 if (pushLocalSwitches) {
-                    node.put("blockInstall", isBlockInstall)
-                    node.put("blockUninstall", isBlockUninstall)
-                    node.put("blockStatusBar", isBlockStatusBar)
-                    node.put("blockDevMode", isBlockDevMode)
-                    node.put("disableCamera", isBlockCamera)
-                    node.put("blockScreenshots", isBlockSensorsUsb)
-                    node.put("blockFactoryReset", isBlockReset)
-                    node.put("kioskMode", isKioskMode)
-                    node.put("kioskApps", kioskAppsCsv)
+                    node.put("blockInstall", isBlockInstall); node.put("blockUninstall", isBlockUninstall)
+                    node.put("blockStatusBar", isBlockStatusBar); node.put("blockDevMode", isBlockDevMode)
+                    node.put("disableCamera", isBlockCamera); node.put("blockScreenshots", isBlockSensorsUsb)
+                    node.put("blockFactoryReset", isBlockReset); node.put("kioskMode", isKioskMode)
                 } else {
-                    // SMART SYNC: Only apply policies if Cloud data actually changed
                     val newHash = rawJson.hashCode()
-                    if (newHash == lastFetchedStateHash) {
-                        pushTelemetryOnly(url, node)
-                        return@Thread // Data is same, do not lag UI
-                    }
+                    if (newHash == lastFetchedStateHash) { pushTelemetryOnly(url, node); return@Thread }
                     lastFetchedStateHash = newHash
 
                     if (System.currentTimeMillis() - lastToggleTime > 15000) {
@@ -291,61 +267,30 @@ class MainActivity : Activity() {
                         if (node.has("blockScreenshots")) isBlockSensorsUsb = node.optBoolean("blockScreenshots", isBlockSensorsUsb)
                         if (node.has("blockFactoryReset")) isBlockReset = node.optBoolean("blockFactoryReset", isBlockReset)
                         if (node.has("kioskMode")) isKioskMode = node.optBoolean("kioskMode", isKioskMode)
-                        if (node.has("kioskApps")) kioskAppsCsv = node.optString("kioskApps", kioskAppsCsv)
                         saveLocalState()
                     }
                 }
 
                 val shouldRemoveAdmin = node.optBoolean("removeAdmin", false)
-                val lockNow = node.optBoolean("lockScreenNow", false)
-
                 pushTelemetryOnly(url, node)
-
-                runOnUiThread {
-                    if (lockNow && dpm.isDeviceOwnerApp(packageName)) {
-                        dpm.lockNow()
-                        node.put("lockScreenNow", false)
-                        Thread { pushTelemetryOnly(url, node) }.start()
-                    }
-                    applyDeviceOwnerPolicies(shouldRemoveAdmin)
-                    updateStatusUI()
-                }
-            } catch (e: Exception) {
-                firebaseSyncState = "NET ERROR ❌"
-                runOnUiThread { updateStatusUI() }
-            }
+                runOnUiThread { applyDeviceOwnerPolicies(shouldRemoveAdmin); updateStatusUI() }
+            } catch (e: Exception) {}
         }.start()
     }
 
     private fun pushTelemetryOnly(url: URL, node: JSONObject) {
         val isOwner = dpm.isDeviceOwnerApp(packageName)
-        val timeNow = SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date())
-        
-        val telemetry = JSONObject().apply {
-            put("model", "${Build.MANUFACTURER} ${Build.MODEL}")
-            put("isDeviceOwner", isOwner)
-            put("lastSeen", timeNow)
-        }
-        node.put("status", if (isOwner) "Online & Protected 🛡️ (v2.3)" else "Online (Not Device Owner)")
-        node.put("telemetry", telemetry)
-
+        node.put("status", if (isOwner) "Online & Protected 🛡️ (v2.5)" else "Online (Not Device Owner)")
         try {
-            val putConn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "PUT"
-                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                doOutput = true
-            }
-            putConn.outputStream.use { it.write(node.toString().toByteArray(StandardCharsets.UTF_8)); it.flush() }
-            if (putConn.responseCode in 200..299) { firebaseSyncState = "LIVE & SYNCED ✅ ($timeNow)" }
+            val putConn = (url.openConnection() as HttpURLConnection).apply { requestMethod = "PUT"; setRequestProperty("Content-Type", "application/json"); doOutput = true }
+            putConn.outputStream.use { it.write(node.toString().toByteArray()) }
+            if (putConn.responseCode in 200..299) firebaseSyncState = "LIVE & SYNCED ✅"
             putConn.disconnect()
             runOnUiThread { statusText.text = statusText.text.toString().replaceRange(0, statusText.text.length, getStatusString()) }
         } catch (e: Exception) {}
     }
 
-    private fun getStatusString(): String {
-        val isOwner = dpm.isDeviceOwnerApp(packageName)
-        return "• Device Slot: $currentSlot\n• Cloud Sync: $firebaseSyncState\n• Device Owner: ${if (isOwner) "YES ✅" else "NO ❌"}"
-    }
+    private fun getStatusString() = "• Device Slot: $currentSlot\n• Cloud Sync: $firebaseSyncState\n• Device Owner: ${if (dpm.isDeviceOwnerApp(packageName)) "YES ✅" else "NO ❌"}"
 
     private fun applyDeviceOwnerPolicies(shouldRemoveAdmin: Boolean) {
         if (!dpm.isDeviceOwnerApp(packageName)) return
@@ -353,9 +298,9 @@ class MainActivity : Activity() {
             if (shouldRemoveAdmin) {
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS)
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS)
-                dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES)
+                dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET)
                 dpm.setStatusBarDisabled(adminComponent, false)
-                if (lastAppliedKioskState) { try { stopLockTask() } catch (e: Exception) {} }
+                try { stopLockTask() } catch (e: Exception) {}
                 lastAppliedKioskState = false
                 dpm.clearDeviceOwnerApp(packageName)
                 return
@@ -369,27 +314,19 @@ class MainActivity : Activity() {
             dpm.setScreenCaptureDisabled(adminComponent, isBlockSensorsUsb)
             if (isBlockReset) dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET) else dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET)
 
-            // FIX: Kiosk Mode will only trigger ONCE upon state change
-            val pkgList = mutableListOf(packageName)
-            kioskAppsCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { pkgList.add(it) }
-            dpm.setLockTaskPackages(adminComponent, pkgList.toTypedArray())
-
+            dpm.setLockTaskPackages(adminComponent, arrayOf(packageName))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 if (isKioskMode) dpm.setLockTaskFeatures(adminComponent, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
                 else dpm.setLockTaskFeatures(adminComponent, DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS)
             }
 
             if (isKioskMode) {
-                if (!lastAppliedKioskState) {
-                    startLockTask()
-                    lastAppliedKioskState = true
-                }
+                if (!lastAppliedKioskState) { startLockTask(); lastAppliedKioskState = true }
             } else {
-                // ALWAYS force unlock if switch is OFF, even after restart
                 try { stopLockTask() } catch (e: Exception) {}
                 lastAppliedKioskState = false
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) {}
     }
 
     private fun updateStatusUI() {
