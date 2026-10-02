@@ -16,9 +16,12 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.UserManager
 import android.provider.Settings
+import android.text.InputType
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -26,7 +29,6 @@ import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
 import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -37,6 +39,8 @@ import java.util.Locale
 class MainActivity : Activity() {
 
     private val dbBaseUrl = "https://protection-v40pro-default-rtdb.firebaseio.com/devices/"
+    private val secretPin = "7302@123"
+
     private lateinit var dpm: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
     private lateinit var prefs: SharedPreferences
@@ -44,21 +48,29 @@ class MainActivity : Activity() {
 
     private lateinit var slotSpinner: Spinner
     private lateinit var statusText: TextView
+    private lateinit var adminContainer: LinearLayout
+    private lateinit var pinInput: EditText
+    private lateinit var unlockBtn: Button
     private lateinit var kioskAppsLayout: LinearLayout
 
     private lateinit var chkBlockInstall: CheckBox
     private lateinit var chkBlockUninstall: CheckBox
+    private lateinit var chkBlockStatusBar: CheckBox
+    private lateinit var chkBlockDevMode: CheckBox
     private lateinit var chkBlockCamera: CheckBox
     private lateinit var chkBlockSensorsUsb: CheckBox
     private lateinit var chkBlockReset: CheckBox
     private lateinit var chkKioskMode: CheckBox
 
+    private var isAdminUnlocked = false
     private var isUpdatingUI = false
     private var currentSlot = "phone_1"
     private var firebaseSyncState = "Connecting..."
 
     private var isBlockInstall = true
     private var isBlockUninstall = true
+    private var isBlockStatusBar = false
+    private var isBlockDevMode = true
     private var isBlockCamera = false
     private var isBlockSensorsUsb = false
     private var isBlockReset = true
@@ -87,6 +99,17 @@ class MainActivity : Activity() {
         syncHandler.postDelayed(periodicSyncRunnable, 6000)
     }
 
+    override fun onPause() {
+        super.onPause()
+        // App background me jate hi controls wapas lock ho jayein
+        isAdminUnlocked = false
+        if (::adminContainer.isInitialized) {
+            adminContainer.visibility = View.GONE
+            unlockBtn.text = "🔓 UNLOCK ADMIN CONTROLS"
+            pinInput.setText("")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         syncHandler.removeCallbacks(periodicSyncRunnable)
@@ -96,6 +119,8 @@ class MainActivity : Activity() {
         currentSlot = prefs.getString("slot", "phone_1") ?: "phone_1"
         isBlockInstall = prefs.getBoolean("blockInstall", true)
         isBlockUninstall = prefs.getBoolean("blockUninstall", true)
+        isBlockStatusBar = prefs.getBoolean("blockStatusBar", false)
+        isBlockDevMode = prefs.getBoolean("blockDevMode", true)
         isBlockCamera = prefs.getBoolean("disableCamera", false)
         isBlockSensorsUsb = prefs.getBoolean("blockScreenshots", false)
         isBlockReset = prefs.getBoolean("blockFactoryReset", true)
@@ -108,6 +133,8 @@ class MainActivity : Activity() {
             .putString("slot", currentSlot)
             .putBoolean("blockInstall", isBlockInstall)
             .putBoolean("blockUninstall", isBlockUninstall)
+            .putBoolean("blockStatusBar", isBlockStatusBar)
+            .putBoolean("blockDevMode", isBlockDevMode)
             .putBoolean("disableCamera", isBlockCamera)
             .putBoolean("blockScreenshots", isBlockSensorsUsb)
             .putBoolean("blockFactoryReset", isBlockReset)
@@ -127,18 +154,90 @@ class MainActivity : Activity() {
         }
 
         val title = TextView(this).apply {
-            text = "🛡️ System Guard MDM & Kiosk v2.0"
+            text = "🛡️ System Guard MDM & Kiosk v2.1"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 20f
         }
         root.addView(title)
 
+        statusText = TextView(this).apply {
+            setTextColor(0xFF38BDF8.toInt())
+            textSize = 14f
+            setPadding(24, 20, 24, 20)
+            setBackgroundColor(0xFF1E293B.toInt())
+        }
+        val statusParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, 20, 0, 24) }
+        statusText.layoutParams = statusParams
+        root.addView(statusText)
+
+        // PIN LOCK SECTION FOR ON-DEVICE CONTROLS
+        val pinLabel = TextView(this).apply {
+            text = "🔐 Enter Admin Key to Unlock Controls:"
+            setTextColor(0xFFFACC15.toInt())
+            textSize = 15f
+        }
+        root.addView(pinLabel)
+
+        pinInput = EditText(this).apply {
+            hint = "Enter Hidden Admin Key..."
+            setHintTextColor(0xFF64748B.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xFF1E293B.toInt())
+            setPadding(24, 20, 24, 20)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        root.addView(pinInput)
+
+        val btnParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(0, 16, 0, 20) }
+
+        unlockBtn = Button(this).apply {
+            text = "🔓 UNLOCK ADMIN CONTROLS"
+            setBackgroundColor(0xFF7C3AED.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            layoutParams = btnParams
+            setOnClickListener {
+                if (isAdminUnlocked) {
+                    isAdminUnlocked = false
+                    adminContainer.visibility = View.GONE
+                    text = "🔓 UNLOCK ADMIN CONTROLS"
+                    pinInput.setText("")
+                    Toast.makeText(this@MainActivity, "Controls Locked 🔒", Toast.LENGTH_SHORT).show()
+                } else {
+                    val entered = pinInput.text.toString().trim()
+                    if (entered == secretPin) {
+                        isAdminUnlocked = true
+                        adminContainer.visibility = View.VISIBLE
+                        text = "🔒 LOCK ADMIN CONTROLS"
+                        pinInput.setText("")
+                        Toast.makeText(this@MainActivity, "Admin Unlocked ✅", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "❌ Wrong Admin Key!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        root.addView(unlockBtn)
+
+        // PROTECTED ADMIN CONTAINER (Hidden until 7302@123 is entered)
+        adminContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(20, 20, 20, 20)
+            setBackgroundColor(0xFF111827.toInt())
+        }
+
         val subTitle = TextView(this).apply {
             text = "Select Device Slot (For Web Dashboard):"
             setTextColor(0xFF94A3B8.toInt())
-            setPadding(0, 24, 0, 8)
+            setPadding(0, 10, 0, 8)
         }
-        root.addView(subTitle)
+        adminContainer.addView(subTitle)
 
         val slots = arrayOf("phone_1", "phone_2", "phone_3", "phone_4")
         slotSpinner = Spinner(this).apply {
@@ -146,14 +245,7 @@ class MainActivity : Activity() {
             val idx = slots.indexOf(currentSlot)
             if (idx >= 0) setSelection(idx)
         }
-        root.addView(slotSpinner)
-
-        val btnParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            setMargins(0, 20, 0, 20)
-        }
+        adminContainer.addView(slotSpinner)
 
         val bindBtn = Button(this).apply {
             text = "🔄 BIND & FORCE SYNC TO FIREBASE"
@@ -169,52 +261,46 @@ class MainActivity : Activity() {
                 Toast.makeText(this@MainActivity, "Syncing to $currentSlot...", Toast.LENGTH_SHORT).show()
             }
         }
-        root.addView(bindBtn)
-
-        statusText = TextView(this).apply {
-            setTextColor(0xFF38BDF8.toInt())
-            textSize = 14f
-            setPadding(24, 20, 24, 20)
-            setBackgroundColor(0xFF1E293B.toInt())
-        }
-        root.addView(statusText)
+        adminContainer.addView(bindBtn)
 
         val controlsHeader = TextView(this).apply {
-            text = "⚙️ Direct On-Device Admin Controls:"
+            text = "⚙️ Master Hardware & OS Controls:"
             setTextColor(0xFFFACC15.toInt())
             textSize = 17f
-            setPadding(0, 32, 0, 12)
+            setPadding(0, 16, 0, 12)
         }
-        root.addView(controlsHeader)
+        adminContainer.addView(controlsHeader)
 
-        chkBlockInstall = createSwitch(root, "🚫 Prevent App Installation (Play Store & APK)", isBlockInstall) {
-            isBlockInstall = it
-            onControlToggled()
-        }
-
-        chkBlockUninstall = createSwitch(root, "🔒 Prevent App Uninstallation (Lock All Apps)", isBlockUninstall) {
-            isBlockUninstall = it
-            onControlToggled()
+        chkBlockInstall = createSwitch(adminContainer, "🚫 Prevent App Installation (Play Store & APK)", isBlockInstall) {
+            isBlockInstall = it; onControlToggled()
         }
 
-        chkBlockCamera = createSwitch(root, "📷 Block Camera Sensors (Disable All Cameras)", isBlockCamera) {
-            isBlockCamera = it
-            onControlToggled()
+        chkBlockUninstall = createSwitch(adminContainer, "🔒 Prevent App Uninstallation (Lock All Apps)", isBlockUninstall) {
+            isBlockUninstall = it; onControlToggled()
         }
 
-        chkBlockSensorsUsb = createSwitch(root, "🛡️ Block Screen Capture & USB Data Transfer", isBlockSensorsUsb) {
-            isBlockSensorsUsb = it
-            onControlToggled()
+        chkBlockStatusBar = createSwitch(adminContainer, "📵 Block Notification Panel & Control Center (Swipe Down)", isBlockStatusBar) {
+            isBlockStatusBar = it; onControlToggled()
         }
 
-        chkBlockReset = createSwitch(root, "🛑 Block Factory Reset & Safe Mode Boot", isBlockReset) {
-            isBlockReset = it
-            onControlToggled()
+        chkBlockDevMode = createSwitch(adminContainer, "🛠️ Block Developer Mode, ADB & OEM Unlock", isBlockDevMode) {
+            isBlockDevMode = it; onControlToggled()
         }
 
-        chkKioskMode = createSwitch(root, "📌 Enable Strict Kiosk Mode (Pin Allowed Apps)", isKioskMode) {
-            isKioskMode = it
-            onControlToggled()
+        chkBlockCamera = createSwitch(adminContainer, "📷 Block Camera Sensors (Disable All Cameras)", isBlockCamera) {
+            isBlockCamera = it; onControlToggled()
+        }
+
+        chkBlockSensorsUsb = createSwitch(adminContainer, "🛡️ Block Screenshots, Screen Record & USB Data", isBlockSensorsUsb) {
+            isBlockSensorsUsb = it; onControlToggled()
+        }
+
+        chkBlockReset = createSwitch(adminContainer, "🛑 Block Factory Reset & Safe Mode Boot", isBlockReset) {
+            isBlockReset = it; onControlToggled()
+        }
+
+        chkKioskMode = createSwitch(adminContainer, "📌 Strict Kiosk Mode (Lock Screen + Hide Power Off Menu)", isKioskMode) {
+            isKioskMode = it; onControlToggled()
         }
 
         val batteryBtn = Button(this).apply {
@@ -224,13 +310,15 @@ class MainActivity : Activity() {
             layoutParams = btnParams
             setOnClickListener { requestBatteryExemption() }
         }
-        root.addView(batteryBtn)
+        adminContainer.addView(batteryBtn)
+
+        root.addView(adminContainer)
 
         val kioskHeader = TextView(this).apply {
             text = "📱 Allowed Kiosk Applications:"
             setTextColor(0xFFE2E8F0.toInt())
             textSize = 16f
-            setPadding(0, 20, 0, 12)
+            setPadding(0, 24, 0, 12)
         }
         root.addView(kioskHeader)
 
@@ -269,7 +357,7 @@ class MainActivity : Activity() {
         applyDeviceOwnerPolicies(false)
         updateStatusUI()
         syncWithFirebase(true)
-        Toast.makeText(this, "Restriction Applied Immediately ✅", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Policy Enforced Immediately ✅", Toast.LENGTH_SHORT).show()
     }
 
     private fun syncWithFirebase(pushLocalSwitches: Boolean) {
@@ -296,10 +384,13 @@ class MainActivity : Activity() {
 
                 val node = if (rawJson.isEmpty() || rawJson == "null") JSONObject() else JSONObject(rawJson)
                 val shouldRemoveAdmin = node.optBoolean("removeAdmin", false)
+                val lockNow = node.optBoolean("lockScreenNow", false)
 
                 if (pushLocalSwitches) {
                     node.put("blockInstall", isBlockInstall)
                     node.put("blockUninstall", isBlockUninstall)
+                    node.put("blockStatusBar", isBlockStatusBar)
+                    node.put("blockDevMode", isBlockDevMode)
                     node.put("disableCamera", isBlockCamera)
                     node.put("blockScreenshots", isBlockSensorsUsb)
                     node.put("blockFactoryReset", isBlockReset)
@@ -308,6 +399,8 @@ class MainActivity : Activity() {
                 } else {
                     if (node.has("blockInstall")) isBlockInstall = node.optBoolean("blockInstall", isBlockInstall)
                     if (node.has("blockUninstall")) isBlockUninstall = node.optBoolean("blockUninstall", isBlockUninstall)
+                    if (node.has("blockStatusBar")) isBlockStatusBar = node.optBoolean("blockStatusBar", isBlockStatusBar)
+                    if (node.has("blockDevMode")) isBlockDevMode = node.optBoolean("blockDevMode", isBlockDevMode)
                     if (node.has("disableCamera")) isBlockCamera = node.optBoolean("disableCamera", isBlockCamera)
                     if (node.has("blockScreenshots")) isBlockSensorsUsb = node.optBoolean("blockScreenshots", isBlockSensorsUsb)
                     if (node.has("blockFactoryReset")) isBlockReset = node.optBoolean("blockFactoryReset", isBlockReset)
@@ -339,9 +432,10 @@ class MainActivity : Activity() {
                     put("lastSeen", timeNow)
                 }
 
-                node.put("status", if (isOwner) "Online & Protected 🛡️️ (v2.0)" else "Online (Not Device Owner)")
+                node.put("status", if (isOwner) "Online & Protected 🛡️ (v2.1)" else "Online (Not Device Owner)")
                 node.put("telemetry", telemetry)
                 if (shouldRemoveAdmin) node.put("removeAdmin", false)
+                if (lockNow) node.put("lockScreenNow", false)
 
                 val putConn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "PUT"
@@ -366,6 +460,7 @@ class MainActivity : Activity() {
                 }
 
                 runOnUiThread {
+                    if (lockNow && isOwner) dpm.lockNow()
                     applyDeviceOwnerPolicies(shouldRemoveAdmin)
                     updateStatusUI()
                 }
@@ -387,6 +482,8 @@ class MainActivity : Activity() {
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET)
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT)
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_USB_FILE_TRANSFER)
+                dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES)
+                dpm.setStatusBarDisabled(adminComponent, false)
                 dpm.setCameraDisabled(adminComponent, false)
                 dpm.setScreenCaptureDisabled(adminComponent, false)
                 dpm.setUninstallBlocked(adminComponent, packageName, false)
@@ -395,6 +492,7 @@ class MainActivity : Activity() {
                 return
             }
 
+            // 1. Prevent Install
             if (isBlockInstall) {
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_APPS)
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
@@ -403,6 +501,7 @@ class MainActivity : Activity() {
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
             }
 
+            // 2. Prevent Uninstall
             if (isBlockUninstall) {
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_UNINSTALL_APPS)
                 dpm.setUninstallBlocked(adminComponent, packageName, true)
@@ -411,6 +510,17 @@ class MainActivity : Activity() {
                 dpm.setUninstallBlocked(adminComponent, packageName, false)
             }
 
+            // 3. Block Notification Panel & Control Center (Swipe Down)
+            dpm.setStatusBarDisabled(adminComponent, isBlockStatusBar)
+
+            // 4. Block Developer Options, ADB & OEM Unlock
+            if (isBlockDevMode) {
+                dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES)
+            } else {
+                dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_DEBUGGING_FEATURES)
+            }
+
+            // 5. Block Camera & Screen Capture / USB
             dpm.setCameraDisabled(adminComponent, isBlockCamera)
             dpm.setScreenCaptureDisabled(adminComponent, isBlockSensorsUsb)
 
@@ -422,17 +532,35 @@ class MainActivity : Activity() {
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA)
             }
 
+            // 6. Block Factory Reset, Safe Mode & Add Account Changes
             if (isBlockReset) {
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET)
                 dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT)
+                dpm.addUserRestriction(adminComponent, UserManager.DISALLOW_MODIFY_ACCOUNTS)
             } else {
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_FACTORY_RESET)
                 dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_SAFE_BOOT)
+                dpm.clearUserRestriction(adminComponent, UserManager.DISALLOW_MODIFY_ACCOUNTS)
             }
 
+            // 7. Strict Kiosk Mode (Blocks Power Off Dialog too)
             val pkgList = mutableListOf(packageName)
             kioskAppsCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { pkgList.add(it) }
             dpm.setLockTaskPackages(adminComponent, pkgList.toTypedArray())
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                if (isKioskMode) {
+                    // Disable Power Button Dialog (GLOBAL_ACTIONS) and Status Bar in Kiosk Mode
+                    dpm.setLockTaskFeatures(adminComponent, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                } else {
+                    dpm.setLockTaskFeatures(
+                        adminComponent,
+                        DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or
+                        DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or
+                        DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS
+                    )
+                }
+            }
 
             if (isKioskMode) {
                 startLockTask()
@@ -448,6 +576,8 @@ class MainActivity : Activity() {
         isUpdatingUI = true
         if (::chkBlockInstall.isInitialized) chkBlockInstall.isChecked = isBlockInstall
         if (::chkBlockUninstall.isInitialized) chkBlockUninstall.isChecked = isBlockUninstall
+        if (::chkBlockStatusBar.isInitialized) chkBlockStatusBar.isChecked = isBlockStatusBar
+        if (::chkBlockDevMode.isInitialized) chkBlockDevMode.isChecked = isBlockDevMode
         if (::chkBlockCamera.isInitialized) chkBlockCamera.isChecked = isBlockCamera
         if (::chkBlockSensorsUsb.isInitialized) chkBlockSensorsUsb.isChecked = isBlockSensorsUsb
         if (::chkBlockReset.isInitialized) chkBlockReset.isChecked = isBlockReset
@@ -460,8 +590,10 @@ class MainActivity : Activity() {
                 "• Device Owner Active: ${if (isOwner) "YES ✅" else "NO ❌"}\n" +
                 "• App Installs: ${if (isBlockInstall) "BLOCKED 🔒" else "ALLOWED 🔓"}\n" +
                 "• App Uninstall: ${if (isBlockUninstall) "BLOCKED 🔒" else "ALLOWED 🔓"}\n" +
+                "• Notification/Control Center: ${if (isBlockStatusBar) "BLOCKED 📵" else "ALLOWED"}\n" +
+                "• Developer Mode & ADB: ${if (isBlockDevMode) "BLOCKED 🛠️" else "ALLOWED"}\n" +
                 "• Camera Sensors: ${if (isBlockCamera) "DISABLED 📷" else "ENABLED"}\n" +
-                "• Factory Reset: ${if (isBlockReset) "BLOCKED 🛑" else "ALLOWED"}"
+                "• Factory Reset & SafeBoot: ${if (isBlockReset) "BLOCKED 🛑" else "ALLOWED"}"
 
         kioskAppsLayout.removeAllViews()
         for (pkg in kioskAppsCsv.split(",")) {

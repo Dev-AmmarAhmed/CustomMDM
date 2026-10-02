@@ -3,24 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>System Guard MDM v2.0 - Cloud Console</title>
+  <title>System Guard MDM v2.1 - Master Cloud Console</title>
   <style>
     body { background: #0b1120; color: #f8fafc; font-family: system-ui, sans-serif; margin: 0; padding: 20px; }
     .container { max-width: 900px; margin: 0 auto; }
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-    h1 { font-size: 22px; margin-top: 0; color: #38bdf8; }
-    select, input, button { width: 100%; padding: 12px; margin-top: 8px; margin-bottom: 16px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 15px; box-sizing: border-box; }
+    h1 { font-size: 21px; margin-top: 0; color: #38bdf8; }
+    select, input, button { width: 100%; padding: 12px; margin-top: 8px; margin-bottom: 14px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 15px; box-sizing: border-box; }
     button { background: #2563eb; border: none; font-weight: bold; cursor: pointer; }
     button:hover { background: #1d4ed8; }
+    .btn-danger { background: #dc2626; }
     .status-box { background: #0f172a; padding: 15px; border-radius: 8px; border-left: 4px solid #10b981; font-family: monospace; line-height: 1.6; }
     .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #334155; }
-    .toggle-row input[type="checkbox"] { width: 22px; height: 22px; margin: 0; }
+    .toggle-row input[type="checkbox"] { width: 22px; height: 22px; margin: 0; cursor: pointer; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <h1>🛡️ System Guard MDM & Kiosk v2.0 (Live Cloud Dashboard)</h1>
+      <h1>🛡️ System Guard MDM & Kiosk v2.1 (Master Cloud Console)</h1>
       <label>Select Managed Phone Slot:</label>
       <select id="slotSelect">
         <option value="phone_1">phone_1 (Vivo V40 Pro / Slot 1)</option>
@@ -32,7 +33,7 @@
     </div>
 
     <div class="card">
-      <h1>⚙️ Remote Policy Controls (Instant Sync)</h1>
+      <h1>⚙️ Remote Hardware & OS Lockdown Controls</h1>
       <div class="toggle-row">
         <span>🚫 Prevent App Installation (Play Store & APK)</span>
         <input type="checkbox" id="blockInstall" onchange="updatePolicy('blockInstall', this.checked)" />
@@ -40,6 +41,14 @@
       <div class="toggle-row">
         <span>🔒 Prevent App Uninstallation (Lock All Apps)</span>
         <input type="checkbox" id="blockUninstall" onchange="updatePolicy('blockUninstall', this.checked)" />
+      </div>
+      <div class="toggle-row">
+        <span>📵 Block Notification Panel & Control Center (Swipe Down)</span>
+        <input type="checkbox" id="blockStatusBar" onchange="updatePolicy('blockStatusBar', this.checked)" />
+      </div>
+      <div class="toggle-row">
+        <span>🛠️ Block Developer Options, ADB & OEM Unlock</span>
+        <input type="checkbox" id="blockDevMode" onchange="updatePolicy('blockDevMode', this.checked)" />
       </div>
       <div class="toggle-row">
         <span>📷 Block Camera Sensors (Disable All Cameras)</span>
@@ -50,17 +59,18 @@
         <input type="checkbox" id="blockScreenshots" onchange="updatePolicy('blockScreenshots', this.checked)" />
       </div>
       <div class="toggle-row">
-        <span>🛑 Block Factory Reset & Safe Boot</span>
+        <span>🛑 Block Factory Reset, Safe Boot & Account Removal</span>
         <input type="checkbox" id="blockFactoryReset" onchange="updatePolicy('blockFactoryReset', this.checked)" />
       </div>
       <div class="toggle-row">
-        <span>📌 Enable Strict Kiosk Mode</span>
+        <span>📌 Strict Kiosk Mode (Pin Apps + Hide Power Off Menu)</span>
         <input type="checkbox" id="kioskMode" onchange="updatePolicy('kioskMode', this.checked)" />
       </div>
 
       <label style="display:block; margin-top:16px;">Allowed Kiosk Packages (comma separated):</label>
       <input type="text" id="kioskApps" placeholder="com.whatsapp,com.android.dialer" />
       <button onclick="saveKioskApps()">💾 Save Allowed Kiosk Apps</button>
+      <button class="btn-danger" onclick="lockPhoneNow()">🔒 Instant Lock Screen Now</button>
     </div>
   </div>
 
@@ -82,7 +92,6 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const slotSelect = document.getElementById("slotSelect");
-    let currentUnsubscribe = null;
 
     function listenToSlot(slot) {
       const slotRef = ref(db, "devices/" + slot);
@@ -98,26 +107,28 @@
 
         document.getElementById("blockInstall").checked = !!d.blockInstall;
         document.getElementById("blockUninstall").checked = !!d.blockUninstall;
+        document.getElementById("blockStatusBar").checked = !!d.blockStatusBar;
+        document.getElementById("blockDevMode").checked = d.blockDevMode !== false;
         document.getElementById("disableCamera").checked = !!d.disableCamera;
         document.getElementById("blockScreenshots").checked = !!d.blockScreenshots;
         document.getElementById("blockFactoryReset").checked = d.blockFactoryReset !== false;
         document.getElementById("kioskMode").checked = !!d.kioskMode;
         document.getElementById("kioskApps").value = d.kioskApps || "com.whatsapp,com.android.dialer";
-      }, (err) => {
-        document.getElementById("liveStatus").innerHTML = `❌ Firebase Error: ${err.message} (Check Database Rules!)`;
       });
     }
 
     window.updatePolicy = (key, val) => {
-      const slot = slotSelect.value;
-      update(ref(db, "devices/" + slot), { [key]: val });
+      update(ref(db, "devices/" + slotSelect.value), { [key]: val });
     };
 
     window.saveKioskApps = () => {
-      const slot = slotSelect.value;
       const val = document.getElementById("kioskApps").value;
-      update(ref(db, "devices/" + slot), { kioskApps: val });
+      update(ref(db, "devices/" + slotSelect.value), { kioskApps: val });
       alert("Kiosk apps updated!");
+    };
+
+    window.lockPhoneNow = () => {
+      update(ref(db, "devices/" + slotSelect.value), { lockScreenNow: true });
     };
 
     slotSelect.addEventListener("change", () => listenToSlot(slotSelect.value));
