@@ -379,10 +379,13 @@ class MainActivity : Activity() {
                 else dpm.setLockTaskFeatures(adminComponent, DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO or DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS)
             }
 
-            if (isKioskMode && !lastAppliedKioskState) {
-                startLockTask()
-                lastAppliedKioskState = true
-            } else if (!isKioskMode && lastAppliedKioskState) {
+            if (isKioskMode) {
+                if (!lastAppliedKioskState) {
+                    startLockTask()
+                    lastAppliedKioskState = true
+                }
+            } else {
+                // ALWAYS force unlock if switch is OFF, even after restart
                 try { stopLockTask() } catch (e: Exception) {}
                 lastAppliedKioskState = false
             }
